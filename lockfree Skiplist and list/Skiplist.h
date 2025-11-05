@@ -7,7 +7,6 @@
 #include <vector>
 #include <atomic>
 #include <iostream>
-#include <intrin.h>
 #include <limits>
 #include <cstdint>
 #include <thread>
