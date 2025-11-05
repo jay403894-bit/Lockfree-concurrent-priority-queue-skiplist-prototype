@@ -104,6 +104,7 @@ struct SNMarkablePointer {
 };
 
 const int MAX_LEVEL = 16;
+enum class NodeState : uint8_t { Unclaimed = 0, Removing = 1, Removed = 2 };
 
 struct SNodeBase {
 	SNMarkablePointer* next;
@@ -147,7 +148,7 @@ struct SNode : SNodeBase {
 		delete[] next;                     // free the array
 		delete static_cast<T*>(this->data);  // delete the object
 	}
-
+	std::atomic<NodeState> state{ NodeState::Unclaimed };
 	int height() const { return topLevel; }
 };
 template <typename T>
@@ -403,49 +404,31 @@ public:
 	bool empty() {
 		return head->next == nullptr;
 	}
-#define DEBUG_POPMIN 1  // set to 0 to disable debug output
 	T* popMin() {
 		constexpr int bottomLevel = 0;
-
 		while (true) {
-			SNode<T>* pred = reinterpret_cast<SNode<T>*>(head);
-			SNode<T>* curr = reinterpret_cast<SNode<T>*>(pred->next[bottomLevel].getReference());
-			SNode<T>* succ = nullptr;
+			SNode<T>* curr = reinterpret_cast<SNode<T>*>(head->next[bottomLevel].getReference());
+			if (curr == tail || !curr) return nullptr;
+
 			bool marked = false;
-			// Step 1: Skip marked nodes at the head
-			while (curr != tail && curr != nullptr) {
-				succ = reinterpret_cast<SNode<T>*>(curr->next[bottomLevel].get(marked));
-				if (!marked) break;
-				std::this_thread::sleep_for(std::chrono::microseconds(1));
-
-				if (!pred->next[bottomLevel].compareAndSet(curr, succ, false, false)) {
-
-					pred = reinterpret_cast<SNode<T>*>(head);
-					curr = reinterpret_cast<SNode<T>*>(pred->next[bottomLevel].getReference());
-					continue;
-				}
-				curr = succ;
-			}
-			if (curr == tail || curr == nullptr) {
-				return nullptr;
-			}
-
-			// Step 2: Logical removal
-			succ = reinterpret_cast<SNode<T>*>(curr->next[bottomLevel].get(marked));
-			if (!curr->next[bottomLevel].attemptMark(succ, true)) {
+			SNode<T>* succ = reinterpret_cast<SNode<T>*>(curr->next[bottomLevel].get(marked));
+			if (marked) {
+				head->next[bottomLevel].compareAndSet(curr, succ, false, false);
 				continue;
 			}
-			// Step 3: Physical unlink
-			if (!pred->next[bottomLevel].compareAndSet(curr, succ, false, false)) {
-				continue;
+
+			// Try to mark the node
+			if (curr->next[bottomLevel].compareAndSet(succ, succ, false, true)) {
+				// Marked successfully, help unlink
+				head->next[bottomLevel].compareAndSet(curr, succ, false, false);
+				T* val = static_cast<T*>(curr->data);
+				EpochManager::instance().retireSNodeBase(curr, EpochManager::instance().currentEpoch());
+				return val;
 			}
-			// Step 4: Now safe to read value and retire
-			T* value = static_cast<T*>(curr->data);
-			EpochManager::instance().retireSNodeBase(curr, EpochManager::instance().currentEpoch());
-			return value;
+
+			// Another thread won, retry
 		}
 	}
-
 };
 
 
