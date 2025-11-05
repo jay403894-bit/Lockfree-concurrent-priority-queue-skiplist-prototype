@@ -164,8 +164,8 @@ public:
 	}
 
 	~SkipList() {
-	//	delete head;
-	//	delete tail;
+		delete head;
+		delete tail;
 	}
 
 	bool find(uint64_t key, SNode<T>* preds[MAX_LEVEL + 1], SNode<T>* succs[MAX_LEVEL + 1]){
