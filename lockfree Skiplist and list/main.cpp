@@ -140,7 +140,7 @@ int main() {
     std::cout << "Add failures: " << addFailures << "\n";
     std::cout << "Get failures: " << getFailures << "\n";
     std::cout << "Contains failures: " << containsFailures << "\n";
-    std::cout << "Remove failures: " << removeFailures << "\n";
+    std::cout << "Multiple threads tried to remove same node: " << removeFailures << "\n";
 
     // Final sanity check: list should be empty
     int remaining = 0;
@@ -157,6 +157,7 @@ int main() {
     }
 
     std::vector<int> results;
+    results.reserve(TOTAL_NODES);
     std::mutex resultsMutex;
     std::vector<std::thread> threads4;
     for (int t = 0; t < THREAD_COUNT; ++t)
@@ -178,3 +179,81 @@ int main() {
 }
 
 
+/*void register_thread(int id) {
+    EpochManager::instance().registerThread(id);
+}
+SkipList<int> pq;
+
+// Worker function for threads
+void worker(int threadId, int start, int end) {
+    for (int i = start; i < end; ++i) {
+        pq.add(i, i * 10);
+    }
+}
+
+int main() {
+ 
+    const int THREADS = 4;
+    std::vector<std::thread> threads;
+
+    for (int t = 0; t < THREADS; ++t) {
+        threads.emplace_back(worker, t, t * 200, (t + 1) * 200);
+    }
+
+    for (auto& th : threads) th.join();
+    int* val = nullptr;
+    while ((val = pq.popMin()) != nullptr) {
+        std::cout << *val << " ";
+    }
+    std::cout << std::endl;
+
+    constexpr int THREAD_COUNT = 4;
+    constexpr int OPS_PER_THREAD = 2000;
+
+    SkipList<int> list;
+
+    std::vector<std::thread> threads2;
+
+    for (int t = 0; t < THREAD_COUNT; ++t) {
+        threads2.emplace_back([&, t]() {
+            register_thread(t);
+
+            for (int i = t * OPS_PER_THREAD; i < (t + 1) * OPS_PER_THREAD; ++i) {
+                list.add(i, i); // insert key=i, value=i
+                auto v = list.get(i);
+                if (v)
+                    std::cout << *v << "\n";
+                if (v == nullptr || *v != i) {
+                    std::cout << "[THREAD " << t << "] GET FAILED at " << i << "\n";
+                }
+
+                if (!list.contains(i)) {
+                    std::cout << "[THREAD " << t << "] CONTAINS FAILED at " << i << "\n";
+                }
+
+                if (!list.remove(i)) {
+                    std::cout << "[THREAD " << t << "] REMOVE FAILED at " << i << "\n";
+                }
+            }
+
+            EpochManager::instance().unregisterThread(t);
+            });
+    }
+
+    for (auto& th : threads2) th.join();
+
+    std::cout << "Finished. Final check...\n";
+
+    // sanity test: list should be empty
+    for (int i = 0; i < THREAD_COUNT * OPS_PER_THREAD; ++i) {
+        if (list.contains(i)) {
+            std::cout << "ERROR: value " << i << " still in list!\n";
+        }
+    }
+
+    std::cout << "Test complete.\n";
+
+    return 0;
+}
+/* 
+  */
