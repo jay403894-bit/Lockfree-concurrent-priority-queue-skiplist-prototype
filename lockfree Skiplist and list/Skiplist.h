@@ -103,7 +103,6 @@ struct SNMarkablePointer {
 };
 
 const int MAX_LEVEL = 16;
-enum class NodeState : uint8_t { Unclaimed = 0, Removing = 1, Removed = 2 };
 
 struct SNodeBase {
 	SNMarkablePointer* next;
@@ -147,7 +146,6 @@ struct SNode : SNodeBase {
 		delete[] next;                     // free the array
 		delete static_cast<T*>(this->data);  // delete the object
 	}
-	std::atomic<NodeState> state{ NodeState::Unclaimed };
 	int height() const { return topLevel; }
 };
 template <typename T>
