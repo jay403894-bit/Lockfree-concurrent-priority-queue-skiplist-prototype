@@ -23,6 +23,10 @@ public:
 	inline void enterEpoch(uint32_t) {}
 	inline void leaveEpoch(uint32_t) {}
 	inline uint64_t currentEpoch() const { return 0; }
+	template<typename T>
+	void retirePtr(T* p, size_t epoch) {
+	}
+
 
 	inline void retireSNodeBase(void*, uint64_t) {}
 	inline void retireSNMarkable(void*, uint64_t) {}

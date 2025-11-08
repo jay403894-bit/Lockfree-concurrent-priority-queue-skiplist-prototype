@@ -24,6 +24,31 @@ struct SNMarkableReference {
 		: val_(val), marked_(mark) {
 	}
 };
+struct SNMarkableReferencePool {
+	std::vector<SNMarkableReference*> pool;
+
+	SNMarkableReference* acquire(SNMarkableReference* reuse = nullptr) {
+		if (reuse) return reuse;
+		if (!pool.empty()) {
+			SNMarkableReference* ref = pool.back();
+			pool.pop_back();
+			return ref;
+		}
+		return new SNMarkableReference();
+	}
+
+	void release(SNMarkableReference* ref) {
+		pool.push_back(ref);
+	}
+
+	~SNMarkableReferencePool() {
+		for (auto ref : pool) delete ref;
+		pool.clear();
+	}
+};
+
+// Thread-local instance — destructor called automatically when thread exits
+thread_local SNMarkableReferencePool snmarkablePool;
 
 // Hardcoded MarkablePointer for Node*
 struct SNMarkablePointer {
@@ -74,7 +99,10 @@ struct SNMarkablePointer {
 
 	void set(SNodeBase* val, bool mark) {
 		SNMarkableReference* oldRef = ref_.load(std::memory_order_acquire);
-		SNMarkableReference* newRef = new SNMarkableReference(val, mark);
+	//	SNMarkableReference* newRef = new SNMarkableReference(val, mark);
+		SNMarkableReference* newRef = snmarkablePool.acquire();
+		newRef->val_ = val;
+		newRef->marked_ = mark;
 		ref_.store(newRef, std::memory_order_release);
 		EpochManager::instance().retireSNMarkable(oldRef, EpochManager::instance().currentEpoch());
 	}
@@ -87,8 +115,11 @@ struct SNMarkablePointer {
 			return false;
 
 		// Prepare the new reference
-		SNMarkableReference* desired = new SNMarkableReference(newPtr, newMark);
+		//SNMarkableReference* desired = new SNMarkableReference(newPtr, newMark);
 
+		SNMarkableReference* desired = snmarkablePool.acquire();
+		desired->val_ = newPtr;
+		desired->marked_ = newMark;
 		// Attempt to atomically swap
 		if (ref_.compare_exchange_strong(curr, desired, std::memory_order_acq_rel)) {
 			// Success — retire the old reference
@@ -97,7 +128,8 @@ struct SNMarkablePointer {
 		}
 
 		// Failed — don't delete curr, someone else changed it
-		delete desired; // we have to delete what we allocated to avoid leaking
+		//delete desired; // we have to delete what we allocated to avoid leaking
+		snmarkablePool.release(desired);
 		return false;
 	}
 };
@@ -167,6 +199,7 @@ public:
 	}
 
 	bool find(uint64_t key, SNode<T>* preds[MAX_LEVEL + 1], SNode<T>* succs[MAX_LEVEL + 1]){
+		EpochManager::instance().enterEpoch(thread_id);
 		int bottomLevel = 0;
 		bool marked = false;
 		SNodeBase* pred = nullptr;
@@ -205,6 +238,7 @@ public:
 				preds[level] = reinterpret_cast<SNode<T>*>(pred);
 				succs[level] = reinterpret_cast<SNode<T>*>(curr);
 			}
+			EpochManager::instance().leaveEpoch(thread_id);
 			return (curr->key == key);
 		}
 	}
@@ -306,7 +340,7 @@ public:
 				}
 			}
 
-			EpochManager::instance().retireSNodeBase(nodeToRemove, EpochManager::instance().currentEpoch());
+			EpochManager::instance().retirePtr(static_cast<SNode<T>*>(nodeToRemove), EpochManager::instance().currentEpoch());
 			// Node logically and physically removed
 			EpochManager::instance().leaveEpoch(thread_id); // <- exit before return
 			return true;
@@ -314,6 +348,7 @@ public:
 	}
 
 	bool contains(uint64_t key) {
+		EpochManager::instance().enterEpoch(thread_id);
 		int bottomLevel = 0;
 		bool marked = false;
 		SNodeBase* pred = head;
@@ -340,7 +375,7 @@ public:
 				}
 			}
 		}
-
+		EpochManager::instance().leaveEpoch(thread_id);
 		return (curr->key == key);
 	}
 	int randomLevel(int maxIndex = MAX_LEVEL, double p = 0.5) {
@@ -349,6 +384,7 @@ public:
 		return level; // returns 0..maxIndex
 	}
 	T* get(uint64_t key) {
+		EpochManager::instance().enterEpoch(thread_id);
 		const int bottomLevel = 0;
 		SNodeBase* pred = head;
 		SNodeBase* curr = nullptr;
@@ -384,9 +420,11 @@ public:
 		if (curr != nullptr)
 			curr->next[bottomLevel].get(nodeMarked);
 
-		if (curr && curr->key == key && !nodeMarked)
+		if (curr && curr->key == key && !nodeMarked) {
+			EpochManager::instance().leaveEpoch(thread_id);
 			return static_cast<T*>(curr->data);
-
+		}
+		EpochManager::instance().leaveEpoch(thread_id);
 		return nullptr;
 	}
 	SNode<T>* advancePred(SNode<T>* pred, int level) {
@@ -399,9 +437,12 @@ public:
 		return pred;
 	}
 	bool empty() {
-		return head->next == nullptr;
+		bool marked = false;
+		SNodeBase* first = head->next[0].get(marked);
+		return first == tail;
 	}
 	T* popMin() {
+		EpochManager::instance().enterEpoch(thread_id);
 		constexpr int bottomLevel = 0;
 		while (true) {
 			SNode<T>* curr = reinterpret_cast<SNode<T>*>(head->next[bottomLevel].getReference());
@@ -419,7 +460,8 @@ public:
 				// Marked successfully, help unlink
 				head->next[bottomLevel].compareAndSet(curr, succ, false, false);
 				T* val = static_cast<T*>(curr->data);
-				EpochManager::instance().retireSNodeBase(curr, EpochManager::instance().currentEpoch());
+				EpochManager::instance().retirePtr(static_cast<SNode<T>*>(curr), EpochManager::instance().currentEpoch());
+				EpochManager::instance().leaveEpoch(thread_id);
 				return val;
 			}
 

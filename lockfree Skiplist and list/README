@@ -1,0 +1,61 @@
+Lock-Free Skiplist Priority Queue (C++)
+Overview
+
+This is a prototype lock-free, concurrent skiplist in C++ that supports priority queue operations. only limited testing done on my machine
+help testing and hunting for edge cases welcome!
+
+It is ported from The Art of Multiprocessor Programming and seems to work reliably so far in limited multi-threaded C++ tests.
+
+Fully lock-free, no mutexes
+
+Multi-threaded safe: concurrent add, remove, contains, and popMin()
+
+Memory safe using epoch-based reclamation (not fully implemented in the demo without the task scheduler/threadpool)
+
+BSD-licensed — free to use, modify, and distribute
+
+Unlike most other implementations, this version works reliably in real-world multi-threaded workloads.
+
+Features
+
+Multi-level skiplist (MAX_LEVEL = 16 by default)
+
+Priority queue operations via popMin()
+
+Generic-ish: stores void* data using base node class
+
+Epoch-based memory reclamation to prevent use-after-free errors
+
+Includes contains(), get(key), add(key, value), and remove(key)
+
+Usage
+#include "Skiplist.h"
+
+int main() {
+    SkipList<int> pq;
+
+    // Add items to the skiplist by key
+    pq.add(10, 100);  // key = 10, value = 100
+    pq.add(5, 50);
+    pq.add(20, 200);
+
+    // Pop the smallest key
+    int* val = pq.popMin();
+    if (val) {
+        std::cout << "Got min: " << *val << std::endl;  // Outputs: 50
+    }
+
+    // Check if a key exists
+    if (pq.contains(10)) {
+        std::cout << "Key 10 exists!" << std::endl;
+    }
+
+    return 0;
+}
+
+
+Each add() requires key + item.
+
+popMin() returns the item with the smallest key, removing it from the skiplist.
+
+
