@@ -10,7 +10,7 @@ public:
 	}
 
 	// No-op stubs — real impl needed for production
-	// see taskscheduler project for full implementation detail
+	// see T_Threads taskscheduler project for full implementation detail
 	// this is jsut a more portable demo of the list itslef
 	// you NEED an epoch or hazard pointer (or other sufficient)
 	// method of managing memory and deleting the marked nodes
