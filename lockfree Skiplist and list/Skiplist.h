@@ -99,7 +99,6 @@ struct SNMarkablePointer {
 
 	void set(SNodeBase* val, bool mark) {
 		SNMarkableReference* oldRef = ref_.load(std::memory_order_acquire);
-	//	SNMarkableReference* newRef = new SNMarkableReference(val, mark);
 		SNMarkableReference* newRef = snmarkablePool.acquire();
 		newRef->val_ = val;
 		newRef->marked_ = mark;
@@ -115,7 +114,6 @@ struct SNMarkablePointer {
 			return false;
 
 		// Prepare the new reference
-		//SNMarkableReference* desired = new SNMarkableReference(newPtr, newMark);
 
 		SNMarkableReference* desired = snmarkablePool.acquire();
 		desired->val_ = newPtr;
@@ -128,7 +126,6 @@ struct SNMarkablePointer {
 		}
 
 		// Failed — don't delete curr, someone else changed it
-		//delete desired; // we have to delete what we allocated to avoid leaking
 		snmarkablePool.release(desired);
 		return false;
 	}
